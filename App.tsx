@@ -39,10 +39,55 @@ type Student = {
   studentClass: string;
 };
 
+type FirebaseError = Error & {
+  code?: string;
+};
+
 const emptyForm = {
   name: '',
   rollNumber: '',
   studentClass: '',
+};
+
+const getAuthErrorMessage = (code: string): string => {
+  const messages: Record<string, string> = {
+    'auth/email-already-in-use':
+      'An account with this email address already exists.',
+    'auth/invalid-email':
+      'Please enter a valid email address.',
+    'auth/invalid-credential':
+      'Invalid email or password. Please try again.',
+    'auth/user-not-found':
+      'No account was found with this email address.',
+    'auth/wrong-password':
+      'Incorrect password. Please try again.',
+    'auth/weak-password':
+      'Please choose a stronger password with at least 6 characters.',
+    'auth/network-request-failed':
+      'Network error. Please check your internet connection.',
+    'auth/too-many-requests':
+      'Too many attempts. Please try again later.',
+  };
+
+  return messages[code] ?? 'Authentication failed. Please try again.';
+};
+
+const getFirestoreErrorMessage = (code: string): string => {
+  const messages: Record<string, string> = {
+    'permission-denied':
+      'You do not have permission to perform this action.',
+    'firestore/permission-denied':
+      'You do not have permission to perform this action.',
+    unavailable:
+      'The service is temporarily unavailable. Please try again.',
+    'firestore/unavailable':
+      'The service is temporarily unavailable. Please try again.',
+    'network-request-failed':
+      'Network error. Please check your internet connection.',
+  };
+
+  return messages[code] ??
+    'Something went wrong while communicating with Firebase. Please try again.';
 };
 
 export default function App() {
@@ -76,7 +121,7 @@ export default function App() {
     return unsubscribe;
   }, [auth]);
 
-  // Current user ke apne students ki live list
+  // Current user's students
   useEffect(() => {
     if (!user) {
       setStudents([]);
@@ -108,7 +153,13 @@ export default function App() {
       error => {
         console.log('Students listener error:', error);
         setLoadingStudents(false);
-        Alert.alert('Firebase Error', error.message);
+
+        Alert.alert(
+          'Firebase Error',
+          getFirestoreErrorMessage(
+            (error as FirebaseError).code ?? '',
+          ),
+        );
       },
     );
 
@@ -134,14 +185,17 @@ export default function App() {
     const cleanEmail = email.trim();
 
     if (!cleanEmail || !password) {
-      Alert.alert('Missing Information', 'Email aur password enter karein.');
+      Alert.alert(
+        'Missing Information',
+        'Please enter your email address and password.',
+      );
       return;
     }
 
     if (password.length < 6) {
       Alert.alert(
         'Invalid Password',
-        'Password kam az kam 6 characters ka ho.',
+        'Password must contain at least 6 characters.',
       );
       return;
     }
@@ -151,28 +205,20 @@ export default function App() {
     try {
       if (authMode === 'register') {
         await createUserWithEmailAndPassword(auth, cleanEmail, password);
-        Alert.alert('Success', 'Account successfully create ho gaya.');
+
+        Alert.alert(
+          'Success',
+          'Your account has been created successfully!',
+        );
       } else {
         await signInWithEmailAndPassword(auth, cleanEmail, password);
       }
     } catch (error: any) {
       console.log('Authentication error:', error);
 
-      const messages: Record<string, string> = {
-        'auth/email-already-in-use':
-          'Is email par account pehle se bana hua hai.',
-        'auth/invalid-email': 'Email address sahi nahi hai.',
-        'auth/invalid-credential': 'Email ya password ghalat hai.',
-        'auth/user-not-found': 'Is email ka account nahi mila.',
-        'auth/wrong-password': 'Password ghalat hai.',
-        'auth/weak-password': 'Mazboot password enter karein.',
-        'auth/network-request-failed':
-          'Internet connection check karein.',
-      };
-
       Alert.alert(
         'Authentication Error',
-        messages[error.code] ?? error.message ?? 'Koi error aa gaya.',
+        getAuthErrorMessage(error.code ?? ''),
       );
     } finally {
       setAuthBusy(false);
@@ -187,8 +233,15 @@ export default function App() {
       setEmail('');
       setPassword('');
       setSearch('');
+
+      Alert.alert('Success', 'You have been logged out successfully.');
     } catch (error: any) {
-      Alert.alert('Logout Error', error.message);
+      console.log('Logout error:', error);
+
+      Alert.alert(
+        'Logout Error',
+        'Unable to log out. Please try again.',
+      );
     }
   };
 
@@ -203,14 +256,17 @@ export default function App() {
   // Add / Update student
   const saveStudent = async () => {
     if (!user) {
-      Alert.alert('Login Required', 'Pehle login karein.');
+      Alert.alert(
+        'Login Required',
+        'Please log in to manage student records.',
+      );
       return;
     }
 
     if (!name.trim() || !rollNumber.trim() || !studentClass.trim()) {
       Alert.alert(
         'Missing Information',
-        'Tamam student fields fill karein.',
+        'Please fill in all required student fields.',
       );
       return;
     }
@@ -222,7 +278,6 @@ export default function App() {
     try {
       const db = getFirestore();
 
-      // Current user ki private students collection
       const studentsCollection = collection(
         db,
         'users',
@@ -243,22 +298,29 @@ export default function App() {
           studentData,
         );
 
-        Alert.alert('Success', 'Student record update ho gaya.');
+        Alert.alert(
+          'Success',
+          'Student record has been updated successfully!',
+        );
       } else {
         await addDoc(studentsCollection, {
           ...studentData,
           createdAt: serverTimestamp(),
         });
 
-        Alert.alert('Success', 'Student Firebase mein save ho gaya.');
+        Alert.alert(
+          'Success',
+          'Student has been added successfully!',
+        );
       }
 
       clearForm();
     } catch (error: any) {
       console.log('Save/Edit error:', error);
+
       Alert.alert(
         'Firebase Error',
-        error.message ?? String(error),
+        getFirestoreErrorMessage(error.code ?? ''),
       );
     } finally {
       setSaving(false);
@@ -296,11 +358,16 @@ export default function App() {
         clearForm();
       }
 
-      Alert.alert('Success', 'Student delete ho gaya.');
+      Alert.alert(
+        'Success',
+        'Student has been deleted successfully!',
+      );
     } catch (error: any) {
+      console.log('Delete error:', error);
+
       Alert.alert(
         'Delete Error',
-        error.message ?? String(error),
+        getFirestoreErrorMessage(error.code ?? ''),
       );
     } finally {
       setDeletingId(null);
@@ -311,7 +378,7 @@ export default function App() {
   const confirmDelete = (student: Student) => {
     Alert.alert(
       'Delete Student',
-      `Kya aap ${student.name} ka record delete karna chahte hain?`,
+      `Are you sure you want to delete ${student.name}'s record?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -328,7 +395,7 @@ export default function App() {
     return (
       <SafeAreaView style={styles.center}>
         <ActivityIndicator size="large" color="#1D4ED8" />
-        <Text style={styles.subtitle}>Checking login...</Text>
+        <Text style={styles.subtitle}>Checking login status...</Text>
       </SafeAreaView>
     );
   }
@@ -537,8 +604,8 @@ export default function App() {
           ) : filteredStudents.length === 0 ? (
             <Text style={styles.emptyText}>
               {students.length === 0
-                ? 'Abhi koi student save nahi hua.'
-                : 'Search se koi student nahi mila.'}
+                ? 'No students have been added yet.'
+                : 'No students found matching your search.'}
             </Text>
           ) : (
             filteredStudents.map(student => (
